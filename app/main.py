@@ -2,9 +2,13 @@ from fastapi import FastAPI
 from app.db.mongodb import Database
 from app.core.config import settings
 from app.api.routes import api_router
+from app.ml.model import ModelManager
 from fastapi.middleware.cors import CORSMiddleware
+import os
 
 app = FastAPI(title="Heart Disease Prediction API")
+
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "../ecg_attention_cnn.h5")
 
 
 app.add_middleware(
@@ -19,9 +23,10 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     await Database.connect_to_mongo(settings.mongodb_uri)
+    ModelManager.load_model(MODEL_PATH)
 
 @app.on_event("shutdown")
 async def shutdown_event():
     await Database.close_mongo_connection()
 
-app.include_router(api_router)
+app.include_router(api_router) 

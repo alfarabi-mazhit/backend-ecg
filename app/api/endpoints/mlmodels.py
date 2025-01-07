@@ -3,17 +3,22 @@ from app.db.mongodb import Database
 from bson.objectid import ObjectId
 from pydantic import BaseModel
 from datetime import datetime
-from app.core.auth_middleware import is_admin
+from app.core.auth_middleware import is_moderator
 from app.models.mlmodel import ModelSchema
 
 router = APIRouter()
 
 # CRUD Operations
 
-@router.post("/", summary="Create a new ML model", dependencies=[Depends(is_admin)])
+
+@router.post("/", summary="Create a new ML model", dependencies=[Depends(is_moderator)])
 async def create_ml_model(model: ModelSchema):
     db = Database.client["heart-disease-db"]
     models_collection = db["mlmodels"]
+
+    # Validate the model URL or filepath (optional, can expand later)
+    if not model.model_url:
+        raise HTTPException(status_code=400, detail="Model URL or filepath is required.")
 
     model_data = model.dict()
     model_data["createdAt"] = datetime.utcnow()
@@ -21,7 +26,7 @@ async def create_ml_model(model: ModelSchema):
     result = await models_collection.insert_one(model_data)
     return {"id": str(result.inserted_id), **model_data}
 
-@router.get("/", summary="Get all ML models", dependencies=[Depends(is_admin)])
+@router.get("/", summary="Get all ML models", dependencies=[Depends(is_moderator)])
 async def get_all_ml_models():
     db = Database.client["heart-disease-db"]
     models_collection = db["mlmodels"]
@@ -38,7 +43,7 @@ async def get_all_ml_models():
         for model in models
     ]
 
-@router.get("/{model_id}", summary="Get details of a specific ML model", dependencies=[Depends(is_admin)])
+@router.get("/{model_id}", summary="Get details of a specific ML model", dependencies=[Depends(is_moderator)])
 async def get_ml_model(model_id: str):
     db = Database.client["heart-disease-db"]
     models_collection = db["mlmodels"]
@@ -60,7 +65,7 @@ async def get_ml_model(model_id: str):
         "createdAt": model["createdAt"],
     }
 
-@router.put("/{model_id}", summary="Update an ML model", dependencies=[Depends(is_admin)])
+@router.put("/{model_id}", summary="Update an ML model", dependencies=[Depends(is_moderator)])
 async def update_ml_model(model_id: str, model: ModelSchema):
     db = Database.client["heart-disease-db"]
     models_collection = db["mlmodels"]
@@ -75,7 +80,7 @@ async def update_ml_model(model_id: str, model: ModelSchema):
         raise HTTPException(status_code=404, detail="Model not found")
     return {"message": "Model updated successfully"}
 
-@router.delete("/{model_id}", summary="Delete an ML model", dependencies=[Depends(is_admin)])
+@router.delete("/{model_id}", summary="Delete an ML model", dependencies=[Depends(is_moderator)])
 async def delete_ml_model(model_id: str):
     db = Database.client["heart-disease-db"]
     models_collection = db["mlmodels"]
