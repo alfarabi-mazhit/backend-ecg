@@ -8,7 +8,7 @@ import os
 
 app = FastAPI(title="Heart Disease Prediction API")
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "../ecg_attention_cnn.h5")
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "../ResNet50ecg50epoch.h5")
 
 
 app.add_middleware(

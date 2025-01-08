@@ -15,3 +15,6 @@ class PredictionSchema(BaseModel):
     model_config = {
         "arbitrary_types_allowed": True,
     }
+
+class NoteUpdate(BaseModel):
+    notes: str

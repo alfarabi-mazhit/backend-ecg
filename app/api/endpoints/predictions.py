@@ -9,37 +9,34 @@ import tensorflow as tf
 import io
 import os
 from app.core.auth_middleware import is_moderator, get_current_user
-from app.models.prediction import PredictionSchema
+from app.models.prediction import PredictionSchema, NoteUpdate
 import shutil
 from pathlib import Path
-from app.ml.model import AttentionModule 
+from keras.utils import load_img
 
 router = APIRouter()
 UPLOAD_DIRECTORY = Path("uploaded_images")
 UPLOAD_DIRECTORY.mkdir(parents=True, exist_ok=True)
 
 # Load the trained model (preloaded when the app starts)
-MODEL_PATH = "ecg_attention_cnn.h5"
+MODEL_PATH = "ResNet50ecg50epoch.h5"
 classnames = ['History of MI', 'Myocardial Infarction', 'Normal', 'abnormal heartbeat']
 try:
-    model = tf.keras.models.load_model(MODEL_PATH, custom_objects={"AttentionModule": AttentionModule})
+    model = tf.keras.models.load_model(MODEL_PATH)
     print("Model loaded successfully.")
 except Exception as e:
     raise RuntimeError(f"Failed to load model from {MODEL_PATH}: {e}")
 
 # Helper function to preprocess image
 def preprocess_image(image: Image.Image) -> np.ndarray:
-    # Resize image to match the model's expected size
-    image = image.resize((128, 128))  # Change to match model's input shape
-
-    # Convert image to grayscale if it's not already
-    if image.mode != "L":  # "L" mode is for grayscale
-        image = image.convert("L")
-
-    # Normalize pixel values and add batch dimension
-    image_array = np.array(image) / 255.0  # Normalize to [0, 1]
-    image_array = np.expand_dims(image_array, axis=-1)  # Add channel dimension
-    return np.expand_dims(image_array, axis=0)  # Add batch dimension
+    # Ensure the image is RGB (3 channels)
+    image = image.resize((224, 224))  # Resize to model's expected input dimensions
+    # image_array = np.array(image) / 255.0  # Normalize pixel values to [0, 1]
+    # return np.expand_dims(image_array, axis=0)
+    # img1 = load_img('PMI(11).jpg', target_size=(224,224))
+    img1 = np.asarray(image)
+    img1 = np.expand_dims(image, axis=0)  # Add batch dimension
+    return img1
 
 
 @router.post("/upload", summary="Upload an ECG image and get prediction")
@@ -69,7 +66,7 @@ async def upload_ecg_image(
     try:
         predictions = model.predict(preprocessed_image)
         predicted_class = int(np.argmax(predictions[0]))  # Convert to Python int
-        confidence = float(predictions[0][predicted_class])  # Convert to Python float
+        confidence = int(round(predictions[0][predicted_class]))  # Convert to Python float
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {e}")
 
@@ -156,9 +153,36 @@ async def get_user_predictions(user_id: str):
             "id": str(pred["_id"]),
             "userId": str(pred["userId"]),
             "imageUrl": pred["imageUrl"],
+            "notes": pred["notes"],
             "prediction": pred["prediction"],
             "createdAt": pred["createdAt"],
         }
         for pred in predictions
     ]
     return formatted_predictions
+
+@router.patch("/{prediction_id}", summary="Update notes for a prediction")
+async def update_prediction_notes(prediction_id: str,note_update: NoteUpdate,current_user: dict = Depends(get_current_user)):
+    db = Database.client["heart-disease-db"]
+    predictions_collection = db["predictions"]
+
+    # Ensure the prediction ID is valid
+    if not ObjectId.is_valid(prediction_id):
+        raise HTTPException(status_code=400, detail="Invalid prediction ID.")
+
+    # Find the prediction and ensure the current user is authorized
+    prediction = await predictions_collection.find_one({"_id": ObjectId(prediction_id)})
+    if not prediction:
+        raise HTTPException(status_code=404, detail="Prediction not found.")
+    if str(prediction["userId"]) != str(current_user["_id"]):
+        raise HTTPException(status_code=403, detail="Unauthorized to update this prediction.")
+
+    # Update the notes field
+    result = await predictions_collection.update_one(
+        {"_id": ObjectId(prediction_id)},
+        {"$set": {"notes": note_update.notes}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Prediction not found.")
+    
+    return {"message": "Notes updated successfully."}
